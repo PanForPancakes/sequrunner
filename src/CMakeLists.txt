@@ -7,8 +7,8 @@ add_executable (
 	"engine/media.cpp"
 	"engine/utility.cpp"
 
-	"${CMAKE_SOURCE_DIR}/external/imgui/misc/cpp/imgui_stdlib.cpp"
-	"${CMAKE_SOURCE_DIR}/external/imgui_knobs/imgui-knobs.cpp"
+	"../external/imgui/misc/cpp/imgui_stdlib.cpp"
+	"../external/imgui_knobs/imgui-knobs.cpp"
 )
 
 set_target_properties (
