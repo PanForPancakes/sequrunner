@@ -1,6 +1,6 @@
 ﻿# sequrunner
 
-## \* Currently this is **work in progress project**, assume that **it just doesn't work at the moment**. \*
+## \* This is **work in progress project**, assume that **it just doesn't work at the moment**. \*
 
 ---
 
