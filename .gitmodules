@@ -1,0 +1,18 @@
+[submodule "external/poco"]
+	path = external/poco
+	url = https://github.com/pocoproject/poco
+[submodule "external/SDL"]
+	path = external/SDL
+	url = https://github.com/libsdl-org/SDL
+[submodule "external/imgui"]
+	path = external/imgui
+	url = https://github.com/ocornut/imgui
+[submodule "external/imgui-knobs"]
+	path = external/imgui-knobs
+	url = https://github.com/altschuler/imgui-knobs
+[submodule "external/freetype"]
+	path = external/freetype
+	url = https://github.com/freetype/freetype
+[submodule "external/nlohmann-json"]
+	path = external/nlohmann-json
+	url = https://github.com/nlohmann/json
