@@ -1,2 +1,3 @@
 # sequrunner
-(WIP) Cue based playback engine for media
+
+Work in progress project, assume that it doesn't work at the moment.
