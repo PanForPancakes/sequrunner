@@ -18,7 +18,7 @@
 2. Update dependency submodules
 
 - ```sh
-  git submodule git submodule update --init --recursive
+  git submodule update --init --recursive
   ```
 
 3. Download and unpack ffmpeg prebuild
