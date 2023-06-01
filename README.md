@@ -20,7 +20,7 @@
 
 3. Download and unpack ffmpeg prebuild
 - Create `external/ffmpeg` folder
-- Download system-matching prebuild from :octocat: [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest)
+- Download system-matching **shared** prebuild from :octocat: [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest)
 - Unpack files into `external/ffmpeg` directory
 - At this point you should have something like this:
   ```
