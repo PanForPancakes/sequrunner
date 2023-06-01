@@ -6,15 +6,18 @@
 
 ## Building
 
-1. Clone the repository
+1. Clone the repository and `cd` into it
 
-- ```
+- ```sh
   git clone https://github.com/PanForPancakes/sequrunner.git
+  ```
+- ```sh
+  cd sequrunner
   ```
 
 2. Update dependency submodules
 
-- ```
+- ```sh
   git submodule git submodule update --init --recursive
   ```
 
