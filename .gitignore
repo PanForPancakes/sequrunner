@@ -1,4 +1,10 @@
+# installed by user
 external/ffmpeg/
+
+# patched by external/CMakeLists.txt from external/imgui-cmake
+external/imgui/CMakeLists.txt
+
+# Visual Studio launch settings
 CMakeSettings.json
 
 # Created by https://www.toptal.com/developers/gitignore/api/c,c++,cmake,visualstudio,visualstudiocode,clion
