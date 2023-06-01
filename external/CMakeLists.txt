@@ -11,9 +11,8 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg")
 	)
 endif ()
 
-add_custom_command (
-	TARGET ALL
-	PRE_BUILD COMMAND
+add_custom_target (
+	copy_ffmpeg_files ALL
 	${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/external/FFmpeg/bin/ $<TARGET_FILE_DIR:${PROJECT_NAME}>
 )
 
