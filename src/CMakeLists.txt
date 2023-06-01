@@ -21,9 +21,9 @@ set_target_properties (
 target_include_directories (
 	${PROJECT_NAME}
 	PRIVATE
-	"external/ffmpeg/include"
-	"external/imgui_knobs"
-	"external/nlohmann_json"
+	"${CMAKE_SOURCE_DIR}/external/ffmpeg/include"
+	"${CMAKE_SOURCE_DIR}/external/imgui-knobs"
+	"${CMAKE_SOURCE_DIR}/external/nlohmann-json"
 )
 
 target_link_libraries (
