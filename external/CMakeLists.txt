@@ -11,9 +11,9 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg")
 	)
 endif ()
 
-add_custom_target (
-	copy_ffmpeg_files ALL
-	${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/external/FFmpeg/bin/ $<TARGET_FILE_DIR:${PROJECT_NAME}>
+# works as a charm, though its supposed to be a custom target if i understood correctly
+execute_process (
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/external/ffmpeg/bin ${CMAKE_BINARY_DIR}
 )
 
 set (IMGUI_ENABLE_STDLIB_SUPPORT ON)

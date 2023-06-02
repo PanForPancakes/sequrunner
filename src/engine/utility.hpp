@@ -11,8 +11,6 @@
 
 #include <cmrc/cmrc.hpp>
 
-CMRC_DECLARE(assets);
-
 namespace engine::utility
 {
 	template<typename Type>
@@ -30,18 +28,22 @@ namespace engine::utility
 		return std::dynamic_pointer_cast<Type1, Type2>(object);
 	}
 
+	/// <summary>
+	/// Basically an alias for std::dynamic_pointer_cast but with std::shared_ptr applied
+	/// </summary>
 	template<typename Type1, typename Type2>
 	Shared<Type1> SharedDynamicCast(Shared<Type2> object)
 	{
 		return std::dynamic_pointer_cast<Type1, Type2>(object);
-
 	}
 
+	/// <summary>
+	/// Basically an alias for std::dynamic_pointer_cast but with std::weak_ptr applied
+	/// </summary>
 	template<typename Type1, typename Type2>
 	Weak<Type1> WeakDynamicCast(Weak<Type2> object)
 	{
 		return std::dynamic_pointer_cast<Type1, Type2>(object);
-
 	}
 
 	/// <summary>
@@ -54,15 +56,12 @@ namespace engine::utility
 	public:
 		const Poco::UUID uuid;
 
-		UUIDable() : uuid(uuid_generator.createRandom()) {}
+		UUIDable();
 
-		UUIDable(const char* uuid) : uuid(uuid) {}
-		UUIDable(const std::string& uuid) : uuid(uuid) {}
+		UUIDable(const char* uuid);
+		UUIDable(const std::string& uuid);
 
-		std::string getUUID()
-		{
-			return uuid.toString();
-		}
+		std::string getUUID();
 	};
 
 	/// <summary>
@@ -140,63 +139,16 @@ namespace engine::utility
 	{
 	public:
 		// Average usage: CMRCFilesystem cool_object(cmrc::the_thing::get_filesystem());
-		CMRCFilesystem(cmrc::embedded_filesystem filesystem) : cmrc::embedded_filesystem(filesystem) {}
+		CMRCFilesystem(cmrc::embedded_filesystem filesystem);
 
-		bool exists(std::string path)
-		{
-			return cmrc::embedded_filesystem::exists(path);
-		}
+		bool exists(std::string path);
+		bool isFile(std::string path);
+		bool isDirectory(std::string path);
 
-		bool isFile(std::string path)
-		{
-			return cmrc::embedded_filesystem::is_file(path);
-		}
+		std::vector<char> loadFile(std::string path);
 
-		bool isDirectory(std::string path)
-		{
-			return cmrc::embedded_filesystem::is_directory(path);
-		}
-
-		std::vector<char> loadFile(std::string path)
-		{
-			if (!exists(path))
-				throw std::exception("File doesn't exist.");
-
-			auto file = cmrc::embedded_filesystem::open(path);
-
-			return std::vector<char>(file.begin(), file.end());
-		}
-
-		std::pair<std::set<std::string>, std::set<std::string>> getFilesAndDirs(std::string path = "")
-		{
-			auto dir = cmrc::embedded_filesystem::iterate_directory(path);
-			auto end = dir.end();
-
-			std::set<std::string> filenames;
-			std::set<std::string> dirnames;
-
-			for (auto iter = dir.begin(); iter != end; iter++)
-			{
-				auto element = *iter;
-				auto element_filename = element.filename();
-
-				if (element.is_file())
-					filenames.insert(element_filename);
-				else
-					dirnames.insert(element_filename);
-			}
-
-			return std::make_pair(filenames, dirnames);
-		}
-
-		std::set<std::string> getFilenames(std::string path = "")
-		{
-			return getFilesAndDirs(path).first;
-		}
-
-		std::set<std::string> getDirectories(std::string path = "")
-		{
-			return getFilesAndDirs(path).second;
-		}
+		std::pair<std::set<std::string>, std::set<std::string>> getFilesAndDirs(std::string path = "");
+		std::set<std::string> getFilenames(std::string path = "");
+		std::set<std::string> getDirectories(std::string path = "");
 	};
 }
