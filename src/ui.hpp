@@ -121,6 +121,26 @@ namespace ui
 		}
 	};
 
+	struct UIDataCueProvider : AbstractCueVisitor
+	{
+		std::string visible_name;
+		std::string texture_key;
+
+		std::function<SharedCue()> generator;
+
+		void accept(MemoCue& cue)
+		{
+			visible_name = "Memo Cue";
+			texture_key = "memocue";
+		}
+
+		void accept(DisarmCue& cue)
+		{
+			visible_name = "Disarm Cue";
+			texture_key = "disarmcue";
+		}
+	};
+
 	extern CMRCFilesystem assets;
 
 	extern SDLWindow* main_window;

@@ -29,6 +29,8 @@ namespace engine::playback
 		ACTIVE
 	};
 
+	struct AbstractCueVisitor;
+
 	/// <summary>
 	/// Abstract structure that exposes basic cue functionality
 	/// </summary>
@@ -43,6 +45,15 @@ namespace engine::playback
 		virtual PlaybackStatus getPlaybackStatus() = 0;
 		virtual void validatePlayback() = 0;
 		virtual void startPlayback() = 0;
+
+		virtual void acceptVisitor(AbstractCueVisitor& visitor) = 0;
+
+		/*
+		void acceptVisitor(AbstractCueVisitor& visitor) override
+		{
+			visitor.accept(*this);
+		}
+		*/
 	};
 
 	/// <summary>
@@ -130,17 +141,39 @@ namespace engine::playback
 		SharedCueList getSelectedCues();
 	};
 
+	struct MemoCue;
+	struct DisarmCue;
+
+	/// <summary>
+	/// Abstract visitor pattern class for adding functionality to cues
+	/// </summary>
+	struct AbstractCueVisitor
+	{
+		virtual void accept(MemoCue& cue) = 0;
+		virtual void accept(DisarmCue& cue) = 0;
+	};
+
 	struct MemoCue : BaseCue
 	{
 		PlaybackStatus getPlaybackStatus() override { return PlaybackStatus::LOADED; }
 		void validatePlayback() override {}
 		void startPlayback() override {}
+
+		void acceptVisitor(AbstractCueVisitor& visitor) override
+		{
+			visitor.accept(*this);
+		}
 	};
 
-	struct FooCue : BaseCue
+	struct DisarmCue : BaseCue
 	{
 		PlaybackStatus getPlaybackStatus() override { return PlaybackStatus::LOADED; }
 		void validatePlayback() override {}
 		void startPlayback() override {}
+
+		void acceptVisitor(AbstractCueVisitor& visitor) override
+		{
+			visitor.accept(*this);
+		}
 	};
 }

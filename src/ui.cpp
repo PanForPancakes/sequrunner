@@ -15,7 +15,6 @@ namespace ui
 		bool show_cues_window = true;
 		bool show_cue_list_toolbox = true;
 		bool show_cue_properties_window = true;
-		bool show_audio_mixer_window = true;
 	} workbench;
 
 	void mainMenuBar()
@@ -136,16 +135,24 @@ namespace ui
 		ImVec2 button_size = ImVec2(48, 48);
 		float window_visible = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
 
-		auto container = main_window->getAllTextureIDs();
-		auto textures = std::vector(container.begin(), container.end());
-
-		for (uint8_t i = 0; i < textures.size(); i++)
+		std::initializer_list<std::tuple<std::string, std::function<SharedCue()>>> cue_buttons
 		{
-			ImGui::ImageButton(textures[i].c_str(), main_window->getTexture(textures[i]), button_size);
+			{ "memocue", std::make_shared<MemoCue> },
+			{ "disarmcue", std::make_shared<DisarmCue> }
+		};
+
+		uint8_t button_i = 0;
+		for (auto& cue_button : cue_buttons)
+		{
+			auto texture = main_window->getTexture(std::get<0>(cue_button));
+
+			if (ImGui::ImageButton(std::get<0>(cue_button).c_str(), texture, button_size))
+				project.insertCueBefore(std::get<1>(cue_button)());
+
 			float_t last_button = ImGui::GetItemRectMax().x;
 			float_t next_button = last_button + ImGui::GetStyle().ItemSpacing.x + button_size.x;
 
-			if (i + 1 < textures.size() && next_button < window_visible)
+			if (button_i + 1 < cue_buttons.size() && next_button < window_visible)
 				ImGui::SameLine();
 		}
 
@@ -235,11 +242,10 @@ namespace ui
 
 		ImGui::SameLine(size.x + ImGui::GetStyle().ItemSpacing.y);
 
-		// i believe many technical debts in this project could be
-		// solved by visitor pattern, but currently im not sure how
-		// to use and implement it correctly
+		UIDataCueProvider visitor;
+		cue->acceptVisitor(visitor);
 
-		SDL_Texture* which = main_window->getTexture("sequrunner");
+		SDL_Texture* which = main_window->getTexture(visitor.texture_key);
 
 		ImGui::SameLine((size.x + ImGui::GetStyle().ItemSpacing.y) * 2);
 		ImGui::Image(which, size);
@@ -347,9 +353,12 @@ namespace ui
 
 		SharedCue cue = *project.getSelectedCues().begin();
 
+		UIDataCueProvider visitor;
+		cue->acceptVisitor(visitor);
+
 		if (auto basecue = cue)
 		{
-			ImGui::SeparatorText("Basics");
+			ImGui::SeparatorText(visitor.visible_name.c_str());
 
 			ezTextField("Sequence Tag", &cue->sequence_tag);
 			ezTextField("Short Description", &cue->short_description);
@@ -414,23 +423,6 @@ namespace ui
 			if (ImGui::Begin("Cue Properties", &workbench.show_cue_properties_window))
 				cuePropertiesWindow(); ImGui::End();
 		}
-
-		if (workbench.show_audio_mixer_window)
-		{
-			//if (ImGui::Begin("Audio Mixer", &workbench.show_audio_mixer_window))
-			//	audioMixerWindow(); ImGui::End();
-		}
-
-		ImGui::Begin("asdf");
-
-		for (auto& asdf : main_window->getAllTextureIDs())
-		{
-			ImGui::Image(main_window->getTexture(asdf), ImVec2(64, 64));
-			ImGui::SameLine();
-			ImGui::ImageButton(asdf.c_str(), main_window->getTexture(asdf), ImVec2(64, 64));
-		}
-
-		ImGui::End();
 	}
 
 	bool event(SDL_Event event)
