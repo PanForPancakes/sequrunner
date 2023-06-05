@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <ranges>
 #include <queue>
 #include <cmath>
 #include <map>
@@ -21,6 +22,8 @@ extern "C"
 	#include <libswscale/swscale.h>
 }
 
+#include <SDL.h>
+
 #include "utility.hpp"
 
 namespace engine::media
@@ -29,74 +32,116 @@ namespace engine::media
 
 	enum class Channel
 	{
-		MONO_SOUND = 0,
+		MONO_CHANNEL = 0,
 		FRONT_CENTER = 0,
 		FRONT_LEFT,
 		FRONT_RIGHT,
-		LFE,
-		SURROUND_LEFT,
-		SURROUND_RIGHT
+		REAR_LEFT,
+		REAR_RIGHT,
+		LFE
 	};
 
-	typedef std::set<Channel> Channels;
+	typedef Set<Channel> ChannelSet;
+	typedef Map<Channel, SampleVector> ChannelSamples;
 
-	extern std::initializer_list<std::pair<AVChannelLayout, Channels>> channel_layout_table;
+	extern std::initializer_list<std::pair<AVChannelLayout, ChannelSet>> channel_layout_table;
 
-	AVChannelLayout channelsToLayout(Channels channels);
-	Channels layoutToChannels(AVChannelLayout layout);
+	AVChannelLayout channelsToLayout(ChannelSet channels);
+	ChannelSet layoutToChannels(AVChannelLayout layout);
 
-	struct AbstractAudioSource
+	class AudioSource
 	{
-		const uint32_t sample_rate;
-		const Channels channels;
+	public:
+		const SampleCount sample_rate;
+		const ChannelSet channels;
 
-		AbstractAudioSource(uint32_t sample_rate, Channels channels) : sample_rate(sample_rate), channels(channels) {}
+		virtual ChannelSamples pullSamples(SampleCount amount) = 0;
 
-		virtual AudioSampleVector pullSamples(uint32_t amount, Channel channel) = 0;
+	protected:
+		AudioSource(SampleCount sample_rate, ChannelSet channels);
 	};
 
-	struct AbstractAudioSink
+	typedef Shared<AudioSource> SharedAudioSource;
+
+	class BufferedAudioSource : public AudioSource
 	{
-		std::shared_ptr<AbstractAudioSource> input;
+		ChannelSamples sample_storage;
 
-		virtual void insertSource(std::shared_ptr<AbstractAudioSource> source);
+	public:
+		ChannelSamples pullSamples(SampleCount amount) override;
+
+	protected:
+		BufferedAudioSource(SampleCount sample_rate, ChannelSet channels);
+
+		void pushSamples(ChannelSamples samples);
 	};
 
-	enum class Waveform
+	class AudioBuffer : public BufferedAudioSource
 	{
-		SINE,
-		SQUARE,
-		TRIANGLE,
-		SAWTOOTH
+	public:
+		AudioBuffer(SampleCount sample_rate, ChannelSet channels);
+		AudioBuffer(SampleCount sample_rate, ChannelSamples samples);
+
+		void pushSamples(ChannelSamples samples);
 	};
 
-	class ToneGenerator : public AbstractAudioSource
+	class AudioMixer : public AudioSource
+	{
+		Set<SharedAudioSource> sources;
+
+	public:
+		AudioMixer(SampleCount sample_rate, ChannelSet channels);
+
+		bool insertSource(SharedAudioSource source);
+		bool removeSource(SharedAudioSource source);
+
+		ChannelSamples pullSamples(SampleCount amount) override;
+	};
+
+	class AudioDrain : protected AudioMixer
+	{
+	public:
+		const SampleCount sample_rate;
+		const ChannelSet channels;
+
+		bool insertSource(SharedAudioSource source);
+		bool removeSource(SharedAudioSource source);
+
+	protected:
+		AudioDrain(SampleCount sample_rate, ChannelSet channels);
+	};
+
+	class AudioResampler : public AudioSource
+	{
+	public:
+		AudioResampler(SampleCount sample_rate, SharedAudioSource source);
+
+		ChannelSamples pullSamples(SampleCount amount) override;
+	};
+
+	class SDLAudioDrain : public AudioDrain
+	{
+	public:
+		SDLAudioDrain(SampleCount sample_rate, ChannelSet channels);
+		~SDLAudioDrain();
+
+		ChannelSamples pullSamples(SampleCount amount);
+	};
+
+	class ToneGenerator : public AudioSource
 	{
 		double_t phase = 0;
 
 	public:
-		Waveform wavetype;
-
+		enum class Waveform { SINE, SQUARE, TRIANGLE, SAWTOOTH } const wavetype;
 		const uint32_t frequency;
 
 		ToneGenerator(uint32_t frequency, Waveform wavetype, uint32_t sample_rate = 0, double_t phase = 0);
 
-		AudioSampleVector pullSamples(uint32_t amount, Channel channel) override;
+		ChannelSamples pullSamples(SampleCount amount) override;
 	};
 
-	class AudioBuffer : public AbstractAudioSource
-	{
-		std::map<Channel, AudioSampleVector> samples;
-
-		static Channels getChannels(const std::map<Channel, AudioSampleVector>& samples);
-
-	public:
-		AudioBuffer(uint32_t sample_rate, std::map<Channel, AudioSampleVector> samples);
-
-		AudioSampleVector pullSamples(uint32_t amount, Channel channel) override;
-	};
-
-	class AudioResampler : public AbstractAudioSource, public AbstractAudioSink
+	/*class AudioResampler : public AudioSource, public AbstractAudioSink
 	{
 		SwrContext* resampler_context;
 
@@ -111,12 +156,12 @@ namespace engine::media
 		AudioResampler(uint32_t out_sample_rate, Channels channels);
 		~AudioResampler();
 
-		void insertSource(std::shared_ptr<AbstractAudioSource> source);
-		AudioSampleVector pullSamples(uint32_t amount, Channel channel);
-	};
+		void insertSource(std::shared_ptr<AudioSource> source);
+		SampleVector pullSamples(uint32_t amount, Channel channel);
+	};*/
 
-	struct AudioLoader
+	/*struct AudioLoader
 	{
 		static AudioBuffer loadAudio(std::string url);
-	};
+	};*/
 }

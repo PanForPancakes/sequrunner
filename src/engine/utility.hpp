@@ -19,6 +19,24 @@ namespace engine::utility
 	template<typename Type>
 	using Weak = std::weak_ptr<Type>;
 
+	template<typename Type>
+	using Unique = std::unique_ptr<Type>;
+
+	template<typename Type>
+	using Atomic = std::atomic<Type>;
+
+	template<typename Type>
+	using Vector = std::vector<Type>;
+
+	template<typename Type>
+	using Set = std::set<Type>;
+
+	template<typename Key, typename Value>
+	using Map = std::map<Key, Value>;
+
+	template<typename First, typename Second>
+	using Pair = std::pair<First, Second>;
+
 	/// <summary>
 	/// Basically an alias for std::dynamic_pointer_cast
 	/// </summary>
@@ -128,9 +146,10 @@ namespace engine::utility
 		}
 	};
 
-	typedef float_t AudioSample;
+	typedef size_t SampleCount;
+	typedef float_t Sample;
 
-	typedef std::vector<AudioSample> AudioSampleVector;
+	typedef Vector<Sample> SampleVector;
 
 	/// <summary>
 	/// Slightly improved CMRC filesystem class
