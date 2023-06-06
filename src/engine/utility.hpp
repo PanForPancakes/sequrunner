@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <queue>
+#include <list>
 #include <set>
 
 #include <Poco/UUID.h>
@@ -30,6 +31,9 @@ namespace engine::utility
 
 	template<typename Type>
 	using Set = std::set<Type>;
+
+	template<typename Type>
+	using List = std::list<Type>;
 
 	template<typename Key, typename Value>
 	using Map = std::map<Key, Value>;

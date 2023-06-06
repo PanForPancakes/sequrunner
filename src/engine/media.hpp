@@ -7,6 +7,7 @@
 #include <string>
 #include <ranges>
 #include <queue>
+#include <deque>
 #include <cmath>
 #include <map>
 #include <set>
@@ -74,6 +75,7 @@ namespace engine::media
 		BufferedAudioSource(SampleCount sample_rate, ChannelSet channels);
 
 		void pushSamples(ChannelSamples samples);
+		virtual void fillSamples(SampleCount amount);
 	};
 
 	class AudioBuffer : public BufferedAudioSource
@@ -111,16 +113,25 @@ namespace engine::media
 		AudioDrain(SampleCount sample_rate, ChannelSet channels);
 	};
 
-	class AudioResampler : public AudioSource
+	class AudioResampler : public BufferedAudioSource
 	{
+		SharedAudioSource source;
+
+		SwrContext* resampler_context;
+
+		const AVChannelLayout channel_layout;
+
 	public:
 		AudioResampler(SampleCount sample_rate, SharedAudioSource source);
+		~AudioResampler();
 
-		ChannelSamples pullSamples(SampleCount amount) override;
+		void fillSamples(SampleCount amount) override;
 	};
 
 	class SDLAudioDrain : public AudioDrain
 	{
+		SDL_AudioDeviceID audio_device;
+
 	public:
 		SDLAudioDrain(SampleCount sample_rate, ChannelSet channels);
 		~SDLAudioDrain();
@@ -141,27 +152,9 @@ namespace engine::media
 		ChannelSamples pullSamples(SampleCount amount) override;
 	};
 
-	/*class AudioResampler : public AudioSource, public AbstractAudioSink
-	{
-		SwrContext* resampler_context;
-
-		uint32_t source_sample_rate = 0;
-		double_t sample_rate_multiplier = 0;
-
-		const AVChannelLayout channel_layout;
-
-		void reconfigureResampler(SwrContext* context);
-
-	public:
-		AudioResampler(uint32_t out_sample_rate, Channels channels);
-		~AudioResampler();
-
-		void insertSource(std::shared_ptr<AudioSource> source);
-		SampleVector pullSamples(uint32_t amount, Channel channel);
-	};*/
-
-	/*struct AudioLoader
+	//TODO: refactor/redo
+	struct AudioLoader
 	{
 		static AudioBuffer loadAudio(std::string url);
-	};*/
+	};
 }

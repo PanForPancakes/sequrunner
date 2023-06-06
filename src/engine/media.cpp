@@ -36,6 +36,9 @@ namespace engine::media
 
 	ChannelSamples BufferedAudioSource::pullSamples(SampleCount amount)
 	{
+		if (amount > sample_storage.begin()->second.size())
+			fillSamples(amount - sample_storage.begin()->second.size());
+
 		ChannelSamples buffer;
 
 		for (auto& pair : sample_storage)
@@ -62,16 +65,18 @@ namespace engine::media
 			pair.second.insert(pair.second.begin(), samples[pair.first].begin(), samples[pair.first].end());
 	}
 
+	void BufferedAudioSource::fillSamples(SampleCount amount) {}
+
 	AudioBuffer::AudioBuffer(SampleCount sample_rate, ChannelSet channels) : BufferedAudioSource(sample_rate, channels) {}
 
 	AudioBuffer::AudioBuffer(SampleCount sample_rate, ChannelSamples samples) : BufferedAudioSource(sample_rate, ChannelSet(std::views::keys(samples).begin(), std::views::keys(samples).end()))
 	{
-		pushSamples(samples);
+		BufferedAudioSource::pushSamples(samples);
 	}
 
 	void AudioBuffer::pushSamples(ChannelSamples samples)
 	{
-		pushSamples(samples);
+		BufferedAudioSource::pushSamples(samples);
 	}
 
 	AudioMixer::AudioMixer(SampleCount sample_rate, ChannelSet channels) : AudioSource(sample_rate, channels) {}
@@ -123,20 +128,92 @@ namespace engine::media
 		return AudioMixer::removeSource(source);
 	}
 
-	AudioDrain::AudioDrain(SampleCount sample_rate, ChannelSet channels) : AudioMixer(sample_rate, channels), sample_rate(sample_rate) {}
+	AudioDrain::AudioDrain(SampleCount sample_rate, ChannelSet channels) : AudioMixer(sample_rate, channels), sample_rate(sample_rate), channels(channels) {}
 
-	AudioResampler::AudioResampler(SampleCount sample_rate, SharedAudioSource source) : AudioSource(sample_rate, source->channels)
+	AudioResampler::AudioResampler(SampleCount sample_rate, SharedAudioSource source) : BufferedAudioSource(sample_rate, source->channels), channel_layout(channelsToLayout(channels))
 	{
-		throw std::exception("Not implemented.");
+		this->source = source;
+
+		resampler_context = swr_alloc();
+
+		av_opt_set_int(resampler_context, "in_sample_rate", source->sample_rate, 0);
+		av_opt_set_int(resampler_context, "out_sample_rate", sample_rate, 0);
+
+		av_opt_set_chlayout(resampler_context, "in_chlayout", &channel_layout, 0);
+		av_opt_set_chlayout(resampler_context, "out_chlayout", &channel_layout, 0);
+
+		av_opt_set_sample_fmt(resampler_context, "in_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
+		av_opt_set_sample_fmt(resampler_context, "out_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
+
+		swr_init(resampler_context);
 	}
 
-	ChannelSamples AudioResampler::pullSamples(SampleCount amount)
+	AudioResampler::~AudioResampler()
 	{
-		throw std::exception("Not implemented.");
+		swr_free(&resampler_context);
+	}
+
+	//TODO: fix slow code
+	void AudioResampler::fillSamples(SampleCount amount)
+	{
+		uint8_t** src_data = 0;
+		int32_t src_linesize = 0;
+		
+		uint8_t** dst_data = 0;
+		int32_t dst_linesize = 0;
+
+		auto src_nb_channels = channel_layout.nb_channels;
+		auto dst_nb_channels = channel_layout.nb_channels;
+
+		auto src_rate = source->sample_rate;
+		auto dst_rate = sample_rate;
+
+		SampleCount src_nb_samples = av_rescale_rnd(amount, src_rate, dst_rate, AV_ROUND_UP);
+
+		ChannelSamples original_samples = source->pullSamples(src_nb_samples);
+		src_nb_samples = original_samples.begin()->second.size();
+
+		SampleCount dst_nb_samples = av_rescale_rnd(src_nb_samples + swr_get_delay(resampler_context, src_rate), dst_rate, src_rate, AV_ROUND_UP);
+
+		av_samples_alloc_array_and_samples(&src_data, &src_linesize, src_nb_channels, src_nb_samples, AV_SAMPLE_FMT_FLT, 0);
+		av_samples_alloc_array_and_samples(&dst_data, &dst_linesize, dst_nb_channels, dst_nb_samples, AV_SAMPLE_FMT_FLT, 0);
+
+		SampleVector src_buff;
+		for (int i = 0; i < src_nb_samples; i++)
+			for (auto& channel : channels)
+				src_buff.push_back(original_samples[channel][i]);
+
+		std::copy(src_buff.begin(), src_buff.end(), (float_t*)src_data[0]);
+
+		int ret = swr_convert(resampler_context, dst_data, dst_nb_samples, (const uint8_t**)src_data, src_nb_samples);
+		int32_t dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels, ret, AV_SAMPLE_FMT_FLT, 1);
+
+		std::vector<Sample> dst_buff(dst_bufsize / sizeof(Sample));
+		std::copy_n((float_t*)dst_data[0], dst_bufsize / sizeof(Sample), dst_buff.begin());
 
 		ChannelSamples buffer;
+		
+		for (auto& channel : channels)
+			buffer[channel] = SampleVector(dst_nb_samples);
 
-		return buffer;
+		auto iter = dst_buff.begin();
+		for (int i = 0; i < dst_bufsize / sizeof(Sample) / dst_nb_channels; i++)
+			for (auto& channel : channels)
+			{
+				buffer[channel].push_back(*iter);
+				std::advance(iter, 1);
+			}
+
+		if (src_data)
+			av_freep(&src_data[0]);
+
+		if (dst_data)
+			av_freep(&dst_data[0]);
+
+		av_freep(&src_data);
+		av_freep(&dst_data);
+
+		pushSamples(buffer);
 	}
 
 	SDLAudioDrain::SDLAudioDrain(SampleCount sample_rate, ChannelSet channels) : AudioDrain(sample_rate, channels)
@@ -178,15 +255,23 @@ namespace engine::media
 
 		SDL_AudioSpec obt = { 0 };
 		
-		if (auto audio_device = SDL_OpenAudioDevice(NULL, NULL, &des, &obt, 0))
-			SDL_PauseAudioDevice(audio_device, false);
-		else
+		audio_device = SDL_OpenAudioDevice(NULL, NULL, &des, &obt, 0);
+		if (!audio_device)
 			throw std::exception("No audio device.");
+
+		if (obt.freq != des.freq || obt.format != des.format || obt.channels != des.channels)
+		{
+			SDL_CloseAudioDevice(audio_device);
+			throw std::exception("Wrong device.");
+		}
+
+		SDL_PauseAudioDevice(audio_device, false);
 	}
 
 	SDLAudioDrain::~SDLAudioDrain()
 	{
-
+		SDL_PauseAudioDevice(audio_device, true);
+		SDL_CloseAudioDevice(audio_device);
 	}
 
 	ChannelSamples engine::media::SDLAudioDrain::pullSamples(SampleCount amount)
@@ -247,188 +332,81 @@ namespace engine::media
 		return buffer_buffer;
 	}
 
-	/*ChannelSet AudioBuffer::getChannels(const std::map<Channel, SampleVector>& samples)
+	AudioBuffer AudioLoader::loadAudio(std::string url)
 	{
-		ChannelSet buffer;
+		std::map<Channel, SampleVector> samples;
 
-		for (auto& pair : samples)
-			buffer.insert(pair.first);
+		AVFormatContext* format_context = avformat_alloc_context();
 
-		return buffer;
-	}*/
+		avformat_open_input(&format_context, url.c_str(), 0, 0);
+		avformat_find_stream_info(format_context, 0);
 
-	/*AudioBuffer::AudioBuffer(uint32_t sample_rate, std::map<Channel, SampleVector> samples) : AbstractAudioSource(sample_rate, getChannels(samples)), samples(samples) {}
+		const AVCodec* decoder;
+		int stream_index = av_find_best_stream(format_context, AVMediaType::AVMEDIA_TYPE_AUDIO, -1, -1, &decoder, 0);
 
-	SampleVector AudioBuffer::pullSamples(uint32_t amount, Channel channel)
-	{
-		SampleVector buffer;
+		AVCodecContext* decoder_context = avcodec_alloc_context3(decoder);
+		avcodec_parameters_to_context(decoder_context, format_context->streams[stream_index]->codecpar);
 
-		if (samples[channel].size() >= amount)
+		avcodec_open2(decoder_context, decoder, 0);
+
+		AVPacket* buffer_packet = av_packet_alloc();
+		AVFrame* buffer_frame = av_frame_alloc();
+
+		AVFrame* frame = av_frame_alloc();
+
+		SwrContext* resampler_context = swr_alloc();
+
+		bool resampler_prepared = false;
+		while (!av_read_frame(format_context, buffer_packet))
 		{
-			buffer = SampleVector(samples[channel].begin(), samples[channel].begin() + amount);
-			samples[channel].erase(samples[channel].begin(), samples[channel].begin() + amount);
+			if (buffer_packet->stream_index != stream_index)
+				continue;
+
+			avcodec_send_packet(decoder_context, buffer_packet);
+			avcodec_receive_frame(decoder_context, buffer_frame);
+
+			if (!resampler_prepared)
+			{
+				frame->sample_rate = buffer_frame->sample_rate;
+				frame->ch_layout = buffer_frame->ch_layout;
+				frame->format = AV_SAMPLE_FMT_FLTP;
+
+				swr_config_frame(resampler_context, frame, buffer_frame);
+				swr_init(resampler_context);
+
+				resampler_prepared = true;
+			}
+
+			// yeah, it doesnt work, i have no idea why
+			int ret = swr_convert_frame(resampler_context, frame, buffer_frame);
+			auto frame = buffer_frame;
+			if (ret < 0)
+				throw std::exception("This is bug I stopped researching since it was taking too long to understand why it just can't do it. Use decoders that return floating point samples as a workaround.");
+
+			for (int channel = 0; channel < decoder_context->ch_layout.nb_channels; channel++)
+			{
+				SampleVector buf;
+
+				for (int i = 0; i < frame->nb_samples; i++)
+					buf.push_back(*((float_t*)(frame->data[channel]) + i));
+
+				auto channel_channel = (Channel)(decoder_context->ch_layout.nb_channels == 1 ? 0 : channel + 1);
+				samples[channel_channel].insert(samples[channel_channel].end(), buf.begin(), buf.end());
+			}
 		}
-		else
-		{
-			buffer = SampleVector(samples[channel].begin(), samples[channel].end());
-			samples[channel].clear();
-		}
 
-		return buffer;
-	}*/
+		auto sample_rate = frame->sample_rate;
 
-	/*void AudioResampler::reconfigureResampler(SwrContext* context)
-	{
-		if (swr_is_initialized(context))
-			swr_close(context);
+		av_frame_free(&frame);
 
-		av_opt_set_int(context, "in_sample_rate", source_sample_rate, 0);
-		av_opt_set_int(context, "out_sample_rate", sample_rate, 0);
+		av_packet_free(&buffer_packet);
+		av_frame_free(&buffer_frame);
 
-		av_opt_set_chlayout(context, "in_chlayout", &channel_layout, 0);
-		av_opt_set_chlayout(context, "out_chlayout", &channel_layout, 0);
-
-		av_opt_set_sample_fmt(context, "in_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
-		av_opt_set_sample_fmt(context, "out_sample_fmt", AV_SAMPLE_FMT_FLT, 0);
-
-		swr_init(context);
-	}*/
-
-	/*AudioResampler::AudioResampler(uint32_t out_sample_rate, ChannelSet channels) : AbstractAudioSource(out_sample_rate, channels), channel_layout(channelsToLayout(channels))
-	{
-		resampler_context = swr_alloc();
-	}
-
-	AudioResampler::~AudioResampler()
-	{
 		swr_free(&resampler_context);
-	}*/
 
-	/*void AudioResampler::insertSource(std::shared_ptr<AbstractAudioSource> source)
-	{
-		AbstractAudioSink::insertSource(source);
+		avcodec_free_context(&decoder_context);
+		avformat_free_context(format_context);
 
-		source_sample_rate = source->sample_rate;
-		sample_rate_multiplier = sample_rate / source->sample_rate;
-
-		reconfigureResampler(resampler_context);
-	}*/
-
-	//SampleVector AudioResampler::pullSamples(uint32_t amount, Channel channel)
-	//{
-	//	SampleVector buffer;
-
-	//	if (!input)
-	//		throw std::exception("Used pullSamples without input set.");
-
-	//	SampleVector original_samples = input->pullSamples(std::ceil(sample_rate_multiplier * amount), channel);
-
-	//	//uint8_t** source_buffer = 0;
-	//	//int32_t source_linesize = 0;
-	//	//
-	//	//uint8_t** destination_buffer = 0;
-	//	//int32_t destination_linesize = 0;
-	//	//
-	//	//av_samples_alloc_array_and_samples(&source_buffer, &source_linesize, , dst_nb_samples, dst_sample_fmt, 0);
-	//	//av_samples_alloc_array_and_samples(&destination_buffer, &destination_linesize, dst_nb_channels, dst_nb_samples, dst_sample_fmt, 0);
-	//	//
-	//	//av_freep(&dst_data[0]);
-	//	//av_samples_alloc(dst_data, &dst_linesize, dst_nb_channels, dst_nb_samples, dst_sample_fmt, 1);
-	//	//
-	//	//ret = swr_convert(swr_ctx, dst_data, dst_nb_samples, (const uint8_t**)src_data, src_nb_samples);
-	//	//if (ret < 0) {
-	//	//	fprintf(stderr, "Error while converting\n");
-	//	//	goto end;
-	//	//}
-	//	//dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels,
-	//	//	ret, dst_sample_fmt, 1);
-	//	//if (dst_bufsize < 0) {
-	//	//	fprintf(stderr, "Could not get sample buffer size\n");
-	//	//	goto end;
-	//	//}
-	//	//printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
-	//	//fwrite(dst_data[0], 1, dst_bufsize, dst_file);
-	//	//
-	//	//swr_convert(resampler_context, )
-
-	//	return buffer;
-	//}
-
-	//AudioBuffer AudioLoader::loadAudio(std::string url)
-	//{
-	//	std::map<Channel, SampleVector> samples;
-
-	//	AVFormatContext* format_context = avformat_alloc_context();
-
-	//	avformat_open_input(&format_context, url.c_str(), 0, 0);
-	//	avformat_find_stream_info(format_context, 0);
-
-	//	const AVCodec* decoder;
-	//	int stream_index = av_find_best_stream(format_context, AVMediaType::AVMEDIA_TYPE_AUDIO, -1, -1, &decoder, 0);
-
-	//	AVCodecContext* decoder_context = avcodec_alloc_context3(decoder);
-	//	avcodec_parameters_to_context(decoder_context, format_context->streams[stream_index]->codecpar);
-
-	//	avcodec_open2(decoder_context, decoder, 0);
-
-	//	AVPacket* buffer_packet = av_packet_alloc();
-	//	AVFrame* buffer_frame = av_frame_alloc();
-
-	//	AVFrame* frame = av_frame_alloc();
-
-	//	SwrContext* resampler_context = swr_alloc();
-
-	//	bool resampler_prepared = false;
-	//	while (!av_read_frame(format_context, buffer_packet))
-	//	{
-	//		if (buffer_packet->stream_index != stream_index)
-	//			continue;
-
-	//		avcodec_send_packet(decoder_context, buffer_packet);
-	//		avcodec_receive_frame(decoder_context, buffer_frame);
-
-	//		if (!resampler_prepared)
-	//		{
-	//			frame->sample_rate = buffer_frame->sample_rate;
-	//			frame->ch_layout = buffer_frame->ch_layout;
-	//			frame->format = AV_SAMPLE_FMT_FLTP;
-
-	//			swr_config_frame(resampler_context, frame, buffer_frame);
-	//			swr_init(resampler_context);
-
-	//			resampler_prepared = true;
-	//		}
-
-	//		// yeah, it doesnt work, i have no idea why
-	//		int ret = swr_convert_frame(resampler_context, frame, buffer_frame);
-	//		auto frame = buffer_frame;
-	//		if (ret < 0)
-	//			throw std::exception("This is bug I stopped researching since it was taking too long to understand why it just can't do it. Use decoders that return floating point samples as a workaround.");
-
-	//		for (int channel = 0; channel < decoder_context->ch_layout.nb_channels; channel++)
-	//		{
-	//			SampleVector buf;
-
-	//			for (int i = 0; i < frame->nb_samples; i++)
-	//				buf.push_back(*((float_t*)(frame->data[channel]) + i));
-
-	//			auto channel_channel = (Channel)(decoder_context->ch_layout.nb_channels == 1 ? 0 : channel + 1);
-	//			samples[channel_channel].insert(samples[channel_channel].end(), buf.begin(), buf.end());
-	//		}
-	//	}
-
-	//	auto sample_rate = frame->sample_rate;
-
-	//	av_frame_free(&frame);
-
-	//	av_packet_free(&buffer_packet);
-	//	av_frame_free(&buffer_frame);
-
-	//	swr_free(&resampler_context);
-
-	//	avcodec_free_context(&decoder_context);
-	//	avformat_free_context(format_context);
-
-	//	return AudioBuffer(sample_rate, samples);
-	//}
+		return AudioBuffer(sample_rate, samples);
+	}
 }
